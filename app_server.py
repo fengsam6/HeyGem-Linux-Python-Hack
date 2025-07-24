@@ -30,7 +30,7 @@ import cv2
 
 class ConcurrencyManager:
     """并发管理器，支持可配置的并发数和队列等待"""
-    
+
     def __init__(self, max_concurrent_tasks=4):
         self.max_concurrent_tasks = max_concurrent_tasks
         self.current_tasks = 0
@@ -39,7 +39,7 @@ class ConcurrencyManager:
         self.worker_thread = None
         self._start_worker()
         logger.info(f"并发管理器初始化完成，最大并发数: {max_concurrent_tasks}")
-    
+
     def _start_worker(self):
         """启动工作线程来处理队列中的任务"""
         def worker():
@@ -49,12 +49,12 @@ class ConcurrencyManager:
                     task_info = self.task_queue.get(timeout=1)
                     if task_info is None:  # 停止信号
                         break
-                    
+
                     # 检查任务信息格式
                     if len(task_info) != 3:
                         logger.error(f"任务信息格式错误: {task_info}")
                         continue
-                    
+
                     # 等待可用的并发槽位
                     while True:
                         with self.lock:
@@ -62,7 +62,7 @@ class ConcurrencyManager:
                                 self.current_tasks += 1
                                 break
                         time.sleep(0.1)
-                    
+
                     # 执行任务
                     task, args, task_id = task_info
                     try:
@@ -76,27 +76,27 @@ class ConcurrencyManager:
                         with self.lock:
                             self.current_tasks -= 1
                         logger.info(f"任务完成: {task_id}, 当前并发数: {self.current_tasks}")
-                        
+
                 except queue.Empty:
                     continue
                 except Exception as e:
                     logger.error(f"工作线程异常: {e}")
                     traceback.print_exc()
-        
+
         self.worker_thread = threading.Thread(target=worker, daemon=True)
         self.worker_thread.start()
-    
+
     def submit_task(self, task, task_id, *args):
         """提交任务到队列"""
         self.task_queue.put((task, args, task_id))
         queue_size = self.task_queue.qsize()
         logger.info(f"任务已提交到队列: {task_id}, 队列长度: {queue_size}")
         return True
-    
+
     def get_queue_size(self):
         """获取队列长度"""
         return self.task_queue.qsize()
-    
+
     def get_current_tasks(self):
         """获取当前运行的任务数"""
         with self.lock:
@@ -142,13 +142,15 @@ class ResponseCode(Enum):
     error1 = [10002, '参数异常']
     error2 = [10003, '获取锁异常']
     error3 = [10004, '任务不存在']
+    duplicate_task = [10005, '任务已存在，正在执行中']
 
 @app.route('/easy/submit', methods=['POST'])
 def easy_submit():
     request_data = json.loads(request.data)
     _code = request_data['code']
-    
+
     try:
+        # 参数验证
         if 'audio_url' not in request_data or request_data['audio_url'] == '':
             return json.dumps(
                 EasyResponse(ResponseCode.error1.value[0], False, 'audio_url参数缺失', {}),
@@ -167,9 +169,31 @@ def easy_submit():
                 default=lambda obj: obj.__dict__,
                 sort_keys=True, ensure_ascii=False,
                 indent=4)
+
+        # 检查任务是否已存在
+        existing_task = task_dic.get(_code, None)
+        if existing_task is not None:
+            existing_status = existing_task[0]
+            if existing_status == Status.run:
+                # 任务正在执行中，返回重复任务提示
+                logger.info(f"任务代码 {_code} 已存在且正在执行中，拒绝重复提交")
+                return json.dumps(
+                    EasyResponse(ResponseCode.duplicate_task.value[0], False, ResponseCode.duplicate_task.value[1],
+                               {'code': _code, 'current_status': existing_status.value}),
+                    default=lambda obj: obj.__dict__,
+                    sort_keys=True, ensure_ascii=False,
+                    indent=4)
+            elif existing_status == Status.success or existing_status == Status.error:
+                # 任务已完成或失败，清除旧记录，允许重新执行
+                logger.info(f"任务代码 {_code} 已完成（状态：{existing_status.value}），清除旧记录并重新执行")
+                try:
+                    del task_dic[_code]
+                except Exception as e:
+                    logger.warning(f"清除旧任务记录失败: {e}")
+
+        # 获取其他参数
         _audio_url = request_data['audio_url']
         _video_url = request_data['video_url']
-        _code = request_data['code']
 
         if 'watermark_switch' not in request_data or request_data['watermark_switch'] == '':
             _watermark_switch = 0
@@ -200,15 +224,20 @@ def easy_submit():
                 _pn = 1
             else:
                 _pn = 0
+
+        # 创建并提交任务
         task = TransDhTask(_code, _audio_url, _video_url, _watermark_switch, _digital_auth, _chaofen, _pn,)
         # 使用并发管理器提交任务到队列
         concurrency_manager.submit_task(task.work, _code)
+        logger.info(f"新任务已提交: {_code}")
+
         return json.dumps(
-            EasyResponse(ResponseCode.success.value[0], True, ResponseCode.success.value[0], {}),
+            EasyResponse(ResponseCode.success.value[0], True, ResponseCode.success.value[1], {'code': _code}),
             default=lambda obj: obj.__dict__,
             sort_keys=True, ensure_ascii=False,
             indent=4)
     except Exception as e:
+        logger.error(f"提交任务异常 {request_data}: {e}")
         traceback.print_exc()
         return json.dumps(
             EasyResponse(ResponseCode.system_error.value[0], False, ResponseCode.system_error.value[1], {}),
