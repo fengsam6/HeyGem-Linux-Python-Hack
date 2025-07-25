@@ -348,8 +348,14 @@ if __name__ == '__main__':
         logger.info("创建结果目录")
         os.makedirs(result_dir)
 
+    # 生产环境建议使用Gunicorn:
+    # gunicorn -w 4 -b 0.0.0.0:8000 --timeout 300 app_server:app
+    # 或者使用uWSGI:
+    # uwsgi --http :8000 --module app_server:app --processes 4 --threads 2
+    
+    logger.info("使用Flask开发服务器启动（生产环境建议使用Gunicorn或uWSGI）")
     app.run(
         host=str(server_ip),
         port=int(server_port),
         debug=False,
-        threaded=False)
+        threaded=True)  # 启用多线程处理HTTP请求
