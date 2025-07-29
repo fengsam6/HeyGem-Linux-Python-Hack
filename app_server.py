@@ -146,6 +146,9 @@ class ResponseCode(Enum):
 
 @app.route('/easy/submit', methods=['POST'])
 def easy_submit():
+    # 确保模型已初始化（Gunicorn环境下的安全措施）
+    ensure_models_initialized()
+    
     request_data = json.loads(request.data)
     _code = request_data['code']
 
@@ -334,10 +337,120 @@ def easy_query():
                     indent=4)
 
 
-if __name__ == '__main__':
+def init_models():
+    """模型初始化函数 - 必须在worker进程中调用"""
+    logger.info("开始初始化AI模型...")
     a()
     init_p()
     time.sleep(15)
+    logger.info("AI模型初始化完成")
+
+# 标记模型是否已初始化
+_models_initialized = False
+
+def ensure_models_initialized():
+    """确保模型已初始化（用于Gunicorn环境）"""
+    global _models_initialized
+    if not _models_initialized:
+        init_models()
+        _models_initialized = True
+
+# Flask应用上下文中的模型初始化（兼容新版本Flask）
+def initialize_models_on_first_request():
+    """Flask首次请求前初始化模型"""
+    ensure_models_initialized()
+
+# 尝试使用before_first_request（如果支持）
+try:
+    # Flask 2.2之前的版本
+    app.before_first_request(initialize_models_on_first_request)
+except AttributeError:
+    # Flask 2.2+版本，我们将在路由中手动调用
+    pass
+
+
+@app.route('/gpu/status', methods=['GET'])
+def gpu_status():
+    """GPU状态检查接口"""
+    try:
+        import os
+        status_info = {
+            'worker_pid': os.getpid(),
+            'models_initialized': _models_initialized,
+            'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'not_set'),
+            'nvidia_visible_devices': os.environ.get('NVIDIA_VISIBLE_DEVICES', 'not_set'),
+        }
+        
+        # 检查ONNX Runtime GPU
+        try:
+            import onnxruntime
+            providers = onnxruntime.get_available_providers()
+            status_info['onnx_providers'] = providers
+            status_info['onnx_cuda_available'] = 'CUDAExecutionProvider' in providers
+        except ImportError:
+            status_info['onnx_runtime'] = 'not_installed'
+        
+        # 检查PyTorch CUDA
+        try:
+            import torch
+            status_info['pytorch_cuda_available'] = torch.cuda.is_available()
+            if torch.cuda.is_available():
+                status_info['pytorch_gpu_count'] = torch.cuda.device_count()
+                status_info['pytorch_current_device'] = torch.cuda.current_device()
+                status_info['pytorch_gpu_name'] = torch.cuda.get_device_name(0)
+                memory_allocated = torch.cuda.memory_allocated() / 1024**3
+                memory_reserved = torch.cuda.memory_reserved() / 1024**3
+                status_info['pytorch_memory'] = {
+                    'allocated_gb': round(memory_allocated, 2),
+                    'reserved_gb': round(memory_reserved, 2)
+                }
+        except ImportError:
+            status_info['pytorch'] = 'not_installed'
+        except Exception as e:
+            status_info['pytorch_error'] = str(e)
+        
+        return json.dumps(
+            EasyResponse(ResponseCode.success.value[0], True, 'GPU状态检查完成', status_info),
+            default=lambda obj: obj.__dict__,
+            sort_keys=True, ensure_ascii=False, indent=2)
+            
+    except Exception as e:
+        logger.error(f"GPU状态检查异常: {e}")
+        import traceback
+        traceback.print_exc()
+        return json.dumps(
+            EasyResponse(ResponseCode.system_error.value[0], False, f'GPU状态检查失败: {str(e)}', {}),
+            default=lambda obj: obj.__dict__,
+            sort_keys=True, ensure_ascii=False, indent=2)
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """健康检查接口"""
+    try:
+        # 确保模型已初始化
+        ensure_models_initialized()
+        
+        return json.dumps(
+            EasyResponse(ResponseCode.success.value[0], True, '服务正常', {
+                'status': 'healthy',
+                'models_initialized': _models_initialized,
+                'worker_pid': os.getpid(),
+                'queue_size': concurrency_manager.get_queue_size(),
+                'current_tasks': concurrency_manager.get_current_tasks()
+            }),
+            default=lambda obj: obj.__dict__,
+            sort_keys=True, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps(
+            EasyResponse(ResponseCode.system_error.value[0], False, f'健康检查失败: {str(e)}', {}),
+            default=lambda obj: obj.__dict__,
+            sort_keys=True, ensure_ascii=False, indent=2)
+
+
+if __name__ == '__main__':
+    # Flask直接运行时才初始化模型
+    init_models()
     logger.info("******************* TransDhServer服务启动 *******************")
     logger.info(f"并发控制配置 - 最大并发数: {concurrency_manager.max_concurrent_tasks}")
     logger.info("任务队列机制已启用，超出并发数的任务将排队等待")

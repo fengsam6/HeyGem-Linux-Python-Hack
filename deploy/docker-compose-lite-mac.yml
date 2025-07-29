@@ -1,0 +1,27 @@
+networks:
+  ai_network:
+    driver: bridge
+
+services:
+  heygem-gen-video:
+    image: guiji2025/heygem.ai
+    container_name: heygem-gen-video
+    platform: linux/amd64  # 强制使用 x86_64 镜像
+    restart: always
+#    runtime: nvidia
+    privileged: true
+    volumes:
+      - /Users/renfeng/data/heygem_data/face2face:/code/data
+    environment:
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - capabilities: [gpu]
+    shm_size: '8g'
+    ports:
+      - '8383:8383'
+    command: bash /code/docker_start.sh
+    networks:
+      - ai_network

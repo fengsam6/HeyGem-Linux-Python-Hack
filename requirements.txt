@@ -63,3 +63,5 @@ typeguard==2.13.3
 typing-extensions==4.2.0
 urllib3==1.26.9
 zipp==3.8.0
+gunicorn==21.2.0
+gevent>=1.4.0
