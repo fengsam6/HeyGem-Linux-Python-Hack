@@ -7,10 +7,7 @@
 @ide    : PyCharm
 @time   : 2023-12-06 19:04:21
 """
-
-# 简单GPU配置
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 os.chdir('/code')
 import time
@@ -23,8 +20,7 @@ from threading import Lock
 from service.self_logger import logger
 from flask import Flask, request
 from service.config import *
-# 导入AI服务模块
-from service.trans_dh_service import TransDhTask, Status, task_dic, a, init_p
+from service.trans_dh_service import TransDhTask, Status,a, init_p, task_dic
 
 import json
 import threading
@@ -67,14 +63,11 @@ class ConcurrencyManager:
                                 break
                         time.sleep(0.1)
 
-                    # 执行任务
+                    # 执行任���
                     task, args, task_id = task_info
                     try:
                         logger.info(f"开始执行任务: {task_id}, 当前并发数: {self.current_tasks}")
-                        
-                        # 执行AI任务
                         task(*args)
-                            
                     except Exception as e:
                         logger.error(f"任务执行异常 {task_id}: {e}")
                         traceback.print_exc()
@@ -186,7 +179,7 @@ def easy_submit():
                 logger.info(f"任务代码 {_code} 已存在且正在执行中，拒绝重复提交")
                 return json.dumps(
                     EasyResponse(ResponseCode.duplicate_task.value[0], False, ResponseCode.duplicate_task.value[1],
-                               {'code': _code, 'current_status': existing_status.value}),
+                                 {'code': _code, 'current_status': existing_status.value}),
                     default=lambda obj: obj.__dict__,
                     sort_keys=True, ensure_ascii=False,
                     indent=4)
@@ -341,81 +334,22 @@ def easy_query():
                     indent=4)
 
 
-
-
-def init_models():
-    """模型初始化"""
-    logger.info("🔧 开始初始化AI模型...")
+if __name__ == '__main__':
     a()
     init_p()
     time.sleep(15)
-    logger.info("✅ AI模型初始化完成")
+    logger.info("******************* TransDhServer服务启动 *******************")
+    logger.info(f"并发控制配置 - 最大并发数: {concurrency_manager.max_concurrent_tasks}")
+    logger.info("任务队列机制已启用，超出并发数的任务将排队等待")
+    if not os.path.exists(temp_dir):
+        logger.info("创建临时目录")
+        os.makedirs(temp_dir)
+    if not os.path.exists(result_dir):
+        logger.info("创建结果目录")
+        os.makedirs(result_dir)
 
-
-
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """健康检查接口"""
-    try:
-        return json.dumps(
-            EasyResponse(ResponseCode.success.value[0], True, '服务正常', {
-                'status': 'healthy',
-                'models_initialized': True,
-                'worker_pid': os.getpid(),
-                'queue_size': concurrency_manager.get_queue_size(),
-                'current_tasks': concurrency_manager.get_current_tasks()
-            }),
-            default=lambda obj: obj.__dict__,
-            sort_keys=True, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps(
-            EasyResponse(ResponseCode.system_error.value[0], False, f'健康检查失败: {str(e)}', {}),
-            default=lambda obj: obj.__dict__,
-            sort_keys=True, ensure_ascii=False, indent=2)
-
-
-@app.route('/gpu/status', methods=['GET'])
-def gpu_status():
-    """GPU状态查询接口"""
-    try:
-        import torch
-        if torch.cuda.is_available():
-            gpu_data = {
-                "gpu_available": True,
-                "device_count": torch.cuda.device_count(),
-                "memory_allocated_mb": round(torch.cuda.memory_allocated() / 1024**2, 1)
-            }
-        else:
-            gpu_data = {"gpu_available": False}
-            
-        return json.dumps(
-            EasyResponse(ResponseCode.success.value[0], True, 'GPU状态查询成功', gpu_data),
-            default=lambda obj: obj.__dict__,
-            sort_keys=True, ensure_ascii=False, indent=2)
-            
-    except Exception as e:
-        return json.dumps(
-            EasyResponse(ResponseCode.system_error.value[0], False, f'GPU状态查询失败: {str(e)}', {}),
-            default=lambda obj: obj.__dict__,
-            sort_keys=True, ensure_ascii=False, indent=2)
-
-
-# 初始化模型（无论Flask还是Gunicorn模式）
-init_models()
-logger.info("******************* TransDhServer服务启动 *******************")
-logger.info(f"并发控制配置 - 最大并发数: {concurrency_manager.max_concurrent_tasks}")
-logger.info("任务队列机制已启用，超出并发数的任务将排队等待")
-if not os.path.exists(temp_dir):
-    logger.info("创建临时目录")
-    os.makedirs(temp_dir)
-if not os.path.exists(result_dir):
-    logger.info("创建结果目录")
-    os.makedirs(result_dir)
-
-if __name__ == '__main__':
     app.run(
         host=str(server_ip),
         port=int(server_port),
         debug=False,
-        threaded=True)  # 启用多线程处理HTTP请求
+        threaded=True)

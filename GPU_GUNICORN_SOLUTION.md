@@ -65,7 +65,30 @@ chmod +x check_gpu_gunicorn.py start_gpu_server.sh
 python check_gpu_gunicorn.py
 ```
 
-### 步骤2：使用GPU启动脚本
+### 步骤2：选择合适的启动方式
+
+#### 方式A：简化版GPU启动器（推荐）
+```bash
+# 解决模块导入问题的简化版启动器
+python start_simple_gpu_server.py
+
+# 自动模式（先试Gunicorn，失败则用Flask）
+python start_simple_gpu_server.py auto
+
+# 强制使用Flask模式
+python start_simple_gpu_server.py flask
+```
+
+#### 方式B：CUDA多进程兼容启动器
+```bash
+# 解决CUDA多进程问题的专用启动器
+python start_cuda_fixed_server.py
+
+# 或使用Flask模式（如果Gunicorn有问题）
+python start_cuda_fixed_server.py flask
+```
+
+#### 方式B：GPU优化启动脚本
 ```bash
 # 默认生产模式启动
 ./start_gpu_server.sh
@@ -133,7 +156,43 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
 nvidia-smi
 ```
 
-### 问题3：启动超时
+### 问题3：模块导入错误
+**现象**：
+```
+ModuleNotFoundError: No module named 'trans_dh_service'
+ModuleNotFoundError: No module named 'ai_service'
+Worker exited with code 1
+```
+
+**解决方案**：
+```bash
+# 使用简化版启动器（解决模块导入问题）
+python start_simple_gpu_server.py
+
+# 或手动设置工作目录和Python路径
+export PYTHONPATH=/code:$PYTHONPATH
+cd /code
+python app_production.py
+```
+
+### 问题4：CUDA多进程错误
+**现象**：
+```
+RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
+```
+
+**解决方案**：
+```bash
+# 使用专门的CUDA兼容启动器
+python start_cuda_fixed_server.py
+
+# 或设置环境变量
+export CUDA_LAUNCH_BLOCKING=1
+export TORCH_USE_CUDA_DSA=1
+python app_production.py
+```
+
+### 问题4：启动超时
 **现象**：服务启动时间过长或超时
 
 **解决方案**：
@@ -199,7 +258,11 @@ curl http://localhost:8383/health
 ## 🔗 相关文件
 
 - `gunicorn.conf.py` - 主配置文件（已优化）
+- `app_server.py` - 应用服务器（已修复CUDA多进程问题）
+- `start_simple_gpu_server.py` - 简化版GPU启动器（推荐，解决模块导入问题）
+- `start_cuda_fixed_server.py` - CUDA多进程兼容启动器
 - `check_gpu_gunicorn.py` - GPU诊断脚本
+- `test_gpu_fix.py` - GPU修复验证测试
 - `start_gpu_server.sh` - GPU启动脚本
 - `AI_MODEL_DEPLOYMENT.md` - 详细部署指南
 

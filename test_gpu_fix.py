@@ -129,6 +129,7 @@ def run_quick_test():
     """运行快速测试"""
     print("="*60)
     print("HeyGem AI - GPU修复验证测试")
+    print("CUDA多进程兼容性检查")
     print("="*60)
     
     # 检查配置
@@ -140,9 +141,11 @@ def run_quick_test():
     if not wait_for_service():
         print("\n❌ 无法连接到服务，请确保服务已启动")
         print("\n📋 启动建议:")
-        print("1. 使用GPU启动脚本: ./start_gpu_server.sh")
-        print("2. 或手动启动: python app_production.py")
-        print("3. 或直接用Gunicorn: gunicorn --config gunicorn.conf.py app_server:app")
+        print("1. 简化版启动器（推荐）: python start_simple_gpu_server.py")
+        print("2. CUDA兼容启动器: python start_cuda_fixed_server.py")
+        print("3. GPU优化脚本: ./start_gpu_server.sh")
+        print("4. 手动启动: python app_production.py")
+        print("5. 直接Gunicorn: gunicorn --config gunicorn.conf.py app_server:app")
         return False
     
     # 测试GPU状态
@@ -174,6 +177,7 @@ def run_quick_test():
         print("2. 检查服务日志中的post_fork信息")
         print("3. 确认GPU环境变量设置正确")
         print("4. 验证CUDA驱动和onnxruntime-gpu安装")
+        print("5. 如果遇到CUDA多进程错误，使用: python start_cuda_fixed_server.py")
         return False
 
 def run_stress_test():
